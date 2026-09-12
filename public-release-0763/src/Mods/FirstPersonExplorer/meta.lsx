@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<save>
+    <version major="4" minor="8" revision="0" build="500"/>
+    <region id="Config">
+        <node id="root">
+            <children>
+                <node id="Conflicts"/>
+                <node id="Dependencies"/>
+                <node id="ModuleInfo">
+                    <attribute id="Author" type="LSString" value="First Person Explorer project"/>
+                    <attribute id="CharacterCreationLevelName" type="FixedString" value=""/>
+                    <attribute id="Description" type="LSString" value="First Person Explorer 0.7.6.3. Requires FirstPersonExplorerNative.dll 0.7.6.3 for full static equipment support; older DLLs use accessory fallback and the supported DirectX 11 build. Static equipment support, independent accessory fallback, temporary scale-only boost and latched body hiding during exploration targeting. Requires Native Camera Tweaks and Script Extender 32."/>
+                    <attribute id="FileSize" type="uint64" value="0"/>
+                    <attribute id="Folder" type="LSString" value="FirstPersonExplorer"/>
+                    <attribute id="LobbyLevelName" type="FixedString" value=""/>
+                    <attribute id="MD5" type="LSString" value=""/>
+                    <attribute id="MenuLevelName" type="FixedString" value=""/>
+                    <attribute id="Name" type="LSString" value="First Person Explorer"/>
+                    <attribute id="NumPlayers" type="uint8" value="1"/>
+                    <attribute id="PhotoBooth" type="FixedString" value=""/>
+                    <attribute id="PublishHandle" type="uint64" value="0"/>
+                    <attribute id="StartupLevelName" type="FixedString" value=""/>
+                    <attribute id="UUID" type="FixedString" value="f2ce5698-135a-4bb2-b58b-b7e946a83c08"/>
+                    <attribute id="Version64" type="int64" value="985188188291075"/>
+                    <children>
+                        <node id="PublishVersion">
+                            <attribute id="Version64" type="int64" value="985188188291075"/>
+                        </node>
+                        <node id="Scripts"/>
+                    </children>
+                </node>
+            </children>
+        </node>
+    </region>
+</save>
