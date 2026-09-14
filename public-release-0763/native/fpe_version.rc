@@ -1,0 +1,30 @@
+#include <winver.h>
+
+1 VERSIONINFO
+FILEVERSION 0,7,6,7
+PRODUCTVERSION 0,7,6,7
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "First Person Explorer project"
+            VALUE "FileDescription", "First Person Explorer DX11 render bridge for Baldur's Gate 3 (Native Mod Loader plugin)"
+            VALUE "FileVersion", "0.7.6.7"
+            VALUE "InternalName", "FirstPersonExplorerNative"
+            VALUE "OriginalFilename", "FirstPersonExplorerNative.dll"
+            VALUE "ProductName", "First Person Explorer"
+            VALUE "ProductVersion", "0.7.6.7"
+            VALUE "Comments", "Open source: https://github.com/Proteusproject1/FirstPersonExplorer"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

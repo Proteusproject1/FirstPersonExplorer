@@ -1,8 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 /* Exact-build DX11 prototype. No object layout writes or code detours. */
 typedef void (*ScaleFn)(void *, const float *);
@@ -86,38 +84,69 @@ static BOOL exchange_slot(void **slot,void *expected,void *replacement) {
     return found==expected;
 }
 #ifndef FPE_TEST
-static DWORD WINAPI initialize(void *module) {
+/* The DLL is linked without a C runtime: it imports only KERNEL32 and exports nothing. */
+static HANDLE open_log(HMODULE module) {
+    static const wchar_t name[]=L"FirstPersonExplorerNative.log";
     wchar_t path[MAX_PATH];
-    GetModuleFileNameW((HMODULE)module,path,MAX_PATH);
-    wchar_t *tail=wcsrchr(path,L'\\');
-    if(!tail) return 0;
-    wcscpy(tail+1,L"FirstPersonExplorerNative.log");
-    FILE *log=_wfopen(path,L"w");
+    DWORD length=GetModuleFileNameW(module,path,MAX_PATH);
+    if(length==0 || length>=MAX_PATH) return INVALID_HANDLE_VALUE;
+    DWORD tail=length;
+    while(tail>0 && path[tail-1]!=L'\\') tail--;
+    if(tail==0 || tail+sizeof(name)/sizeof(name[0])>MAX_PATH) return INVALID_HANDLE_VALUE;
+    for(DWORD i=0;i<sizeof(name)/sizeof(name[0]);i++) path[tail+i]=name[i];
+    return CreateFileW(path,GENERIC_WRITE,FILE_SHARE_READ,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
+}
+static void log_bytes(HANDLE log,const char *bytes,DWORD count) {
+    DWORD written;
+    if(log!=INVALID_HANDLE_VALUE) WriteFile(log,bytes,count,&written,NULL);
+}
+static void log_text(HANDLE log,const char *text) {
+    DWORD count=0;
+    while(text[count]) count++;
+    log_bytes(log,text,count);
+}
+static void log_number(HANDLE log,unsigned int value) {
+    char digits[10];
+    DWORD first=sizeof(digits);
+    do { digits[--first]=(char)('0'+value%10); value/=10; } while(value);
+    log_bytes(log,digits+first,sizeof(digits)-first);
+}
+static void log_close(HANDLE log) {
+    if(log!=INVALID_HANDLE_VALUE) CloseHandle(log);
+}
+static BOOL bytes_equal(const unsigned char *a,const unsigned char *b,int count) {
+    for(int i=0;i<count;i++) if(a[i]!=b[i]) return FALSE;
+    return TRUE;
+}
+static DWORD WINAPI initialize(void *module) {
+    HANDLE log=open_log((HMODULE)module);
     unsigned char *base=(unsigned char*)GetModuleHandleW(NULL);
     IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)base;
     IMAGE_NT_HEADERS64 *nt=(IMAGE_NT_HEADERS64*)(base+dos->e_lfanew);
     #include "verified_table.h"
     if(nt->FileHeader.TimeDateStamp!=1780568190u || nt->OptionalHeader.SizeOfImage!=106659840u) {
-        if(log){fputs("DISABLED: unsupported executable. Requires verified BG3 DX11 build.\n",log);fclose(log);} return 0;
+        log_text(log,"DISABLED: unsupported executable. Requires verified BG3 DX11 build.\n"); log_close(log); return 0;
     }
     void **tables[4];
     for(int t=0;t<4;t++) {
         tables[t]=(void**)(base+verified_tables[t]);
         for(int i=0;i<30;i++) if(tables[t][i]!=(void*)(base+verified_rvas[t][i])) {
-            if(log){fprintf(log,"DISABLED: table %d mismatch at slot %d\n",t,i);fclose(log);} return 0;
+            log_text(log,"DISABLED: table "); log_number(log,t); log_text(log," mismatch at slot "); log_number(log,i); log_text(log,"\n");
+            log_close(log); return 0;
         }
-        for(int i=0;i<3;i++) if(memcmp(base+verified_rvas[t][verified_slots[i]],verified_bytes[t][i],32)) {
-            if(log){fprintf(log,"DISABLED: method fingerprint mismatch table %d slot %d\n",t,verified_slots[i]);fclose(log);} return 0;
+        for(int i=0;i<3;i++) if(!bytes_equal(base+verified_rvas[t][verified_slots[i]],verified_bytes[t][i],32)) {
+            log_text(log,"DISABLED: method fingerprint mismatch table "); log_number(log,t); log_text(log," slot "); log_number(log,verified_slots[i]); log_text(log,"\n");
+            log_close(log); return 0;
         }
         original_destroy[t]=(DestroyFn)tables[t][1];
     }
     original_scale=(ScaleFn)tables[0][4]; original_render=(RenderFn)tables[0][20];
     for(int t=1;t<4;t++) if(tables[t][4]!=(void*)original_scale || tables[t][20]!=(void*)original_render) {
-        if(log){fputs("DISABLED: incompatible render family\n",log);fclose(log);} return 0;
+        log_text(log,"DISABLED: incompatible render family\n"); log_close(log); return 0;
     }
     HMODULE pinned;
     if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,(LPCWSTR)&render_hook,&pinned)) {
-        if(log)fclose(log); return 0;
+        log_close(log); return 0;
     }
     BOOL installed=TRUE;
     for(int t=0;t<4 && installed;t++) {
@@ -131,13 +160,14 @@ static DWORD WINAPI initialize(void *module) {
             exchange_slot(&tables[t][20],(void*)render_hook,(void*)original_render);
             exchange_slot(&tables[t][1],(void*)destroy_hooks[t],(void*)original_destroy[t]);
         }
-        if(log){fputs("DISABLED: installation failed; own hooks rolled back\n",log);fclose(log);} return 0;
+        log_text(log,"DISABLED: installation failed; own hooks rolled back\n"); log_close(log); return 0;
     }
     InterlockedExchange(&enabled,1);
-    if(log){fputs("READY 0.7.6.3 Public Release: DX11 render bridge; four validated mesh tables including static equipment; 500ms expiry.\n",log);fclose(log);}
+    log_text(log,"READY 0.7.6.7 Public Release: DX11 render bridge; four validated mesh tables including static equipment; 500ms expiry; no C runtime.\n");
+    log_close(log);
     return 0;
 }
-BOOL WINAPI DllMain(HINSTANCE module,DWORD reason,LPVOID reserved) {
+BOOL WINAPI _DllMainCRTStartup(HINSTANCE module,DWORD reason,LPVOID reserved) {
     (void)reserved;
     if(reason==DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(module);

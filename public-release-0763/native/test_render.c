@@ -1,4 +1,5 @@
 #define FPE_TEST
+#include <stdio.h>
 #include "fpe_render.c"
 #undef NDEBUG
 #include <assert.h>

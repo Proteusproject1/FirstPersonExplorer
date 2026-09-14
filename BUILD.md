@@ -1,6 +1,6 @@
-# Build 0.7.6.3
+# Build 0.7.6.7
 
-## Native DX11 component (the quarantined file)
+## Native DX11 component
 
 Use Windows x64, PowerShell and **Zig 0.16.0 for Windows x86_64** from the
 [official Zig download page](https://ziglang.org/download/#release-0.16.0).
@@ -20,19 +20,24 @@ This builds and runs `test_render.exe`, builds `FirstPersonExplorerNative.dll`,
 and packages it at `bin/NativeMods/FirstPersonExplorerNative.dll` inside a Vortex ZIP
 under `dist`. There are no nested archives or additional binaries in that ZIP.
 
-The compiler commands used for the public release, from the repository root, are:
+The compiler commands, from the repository root, are:
 
 ```powershell
+$headers = 'C:\Tools\zig-x86_64-windows-0.16.0\lib\libc\include\any-windows-any'
 zig cc public-release-0763/native/test_render.c -O2 -Wall -Wextra -Werror -o public-release-0763/native/test_render.exe
 ./public-release-0763/native/test_render.exe
-zig cc public-release-0763/native/fpe_render.c -shared -O2 -Wall -Wextra -Werror -o public-release-0763/native/FirstPersonExplorerNative.dll
+zig cc public-release-0763/native/fpe_render.c public-release-0763/native/fpe_version.rc -target x86_64-windows-gnu -isystem $headers -shared -O2 -Wall -Wextra -Werror -nostdlib -ffreestanding -lkernel32 -s -o public-release-0763/native/FirstPersonExplorerNative.dll
 ```
 
+`-nostdlib -ffreestanding -lkernel32` links no C runtime: the DLL entry point is
+`_DllMainCRTStartup` in `fpe_render.c`, and the only import library is KERNEL32.
+`-s` strips symbols. `fpe_version.rc` embeds the version resource.
+
 No obfuscator, packer, post-build binary patch or code-signing step is used.
-Build-generated PDB, LIB and test EXE files are not distributed in the mod ZIP.
-Use the released hashes in REVIEW.md to identify the exact submitted files.
+Build-generated LIB and test EXE files are not distributed in the mod ZIP.
+Use the released hashes in REVIEW.md to identify the exact published files.
 Source hashes are in SHA256SUMS.txt. A rebuild's ZIP hash can differ because ZIPs
-include file timestamps; bit-identical output is not a requirement of this script.
+include file timestamps.
 
 ## Main PAK (optional for native review)
 
