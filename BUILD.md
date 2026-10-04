@@ -1,59 +1,45 @@
-# Build 0.7.6.7
+# Build 0.9.0 / Native 0.7.7.0
 
 ## Native DX11 component
 
 Use Windows x64, PowerShell and **Zig 0.16.0 for Windows x86_64** from the
-[official Zig download page](https://ziglang.org/download/#release-0.16.0).
-The Windows compiler archive is named `zig-x86_64-windows-0.16.0.zip`.
-No Visual Studio installation, game files or running game are needed to compile
-the native DLL or run its tests. The tests exercise local fake render objects;
-they do not attach to a game process.
+[official Zig download page](https://ziglang.org/download/#release-0.16.0)
+(`zig-x86_64-windows-0.16.0.zip`). No Visual Studio installation or running game is needed.
 
-Download this repository, extract it, and open PowerShell in its root directory.
-Replace the compiler path below with the location where you extracted Zig:
+Open PowerShell in the repository root, replacing the compiler path with yours:
 
 ```powershell
 ./build-native.ps1 -Zig 'C:\Tools\zig-x86_64-windows-0.16.0\zig.exe'
 ```
 
-This builds and runs `test_render.exe`, builds `FirstPersonExplorerNative.dll`,
-and packages it at `bin/NativeMods/FirstPersonExplorerNative.dll` inside a Vortex ZIP
-under `dist`. There are no nested archives or additional binaries in that ZIP.
+The script:
 
-The compiler commands, from the repository root, are:
-
-```powershell
-$headers = 'C:\Tools\zig-x86_64-windows-0.16.0\lib\libc\include\any-windows-any'
-zig cc public-release-0763/native/test_render.c -O2 -Wall -Wextra -Werror -o public-release-0763/native/test_render.exe
-./public-release-0763/native/test_render.exe
-zig cc public-release-0763/native/fpe_render.c public-release-0763/native/fpe_version.rc -target x86_64-windows-gnu -isystem $headers -shared -O2 -Wall -Wextra -Werror -nostdlib -ffreestanding -lkernel32 -s -o public-release-0763/native/FirstPersonExplorerNative.dll
-```
-
-`-nostdlib -ffreestanding -lkernel32` links no C runtime: the DLL entry point is
-`_DllMainCRTStartup` in `fpe_render.c`, and the only import library is KERNEL32.
-`-s` strips symbols. `fpe_version.rc` embeds the version resource.
+1. builds and runs `test_render` (render bridge: dispatch, registry, expiry, threading,
+   protected-slot install and rollback) and `test_scale_diag` (instant-scale mailbox and the
+   real mid-function hook through MinHook, including CPU-state preservation);
+2. if BG3 is installed at the default Steam path (or `-GameExe` points to `bg3_dx11.exe`),
+   builds and runs `test_locate`: it maps the executable read-only the way the Windows loader
+   does, checks that the hooked code is found, then that tampered copies are refused. Its
+   expected addresses are for game build stamp 1789998461, so it fails on other builds;
+3. compiles each unit, links the DLL without a C runtime using Zig's COFF linker, and
+   writes `dist/FirstPersonExplorerNative.dll` and
+   `dist/TrueFirstPersonCamera_Native_DX11_0.7.7.0_Vortex.zip`
+   (`bin/NativeMods/FirstPersonExplorerNative.dll` plus `MinHook-LICENSE.txt`);
+4. prints the DLL hash with the 4-byte PE build timestamp zeroed and compares it with the
+   released DLL. The linker stamps the build time into the header, so that is the only
+   difference a rebuild has from the released binary.
 
 No obfuscator, packer, post-build binary patch or code-signing step is used.
-Build-generated LIB and test EXE files are not distributed in the mod ZIP.
-Use the released hashes in REVIEW.md to identify the exact published files.
-Source hashes are in SHA256SUMS.txt. A rebuild's ZIP hash can differ because ZIPs
-include file timestamps.
 
-## Main PAK (optional for native review)
+## Main PAK
 
-Use [LSLib/Divine v1.20.4](https://github.com/Norbyte/lslib/releases/tag/v1.20.4).
-The main package has no compilation step: Divine packages seven source files.
-Set the paths below to your checkout and extracted Divine executable:
+Use [LSLib/Divine](https://github.com/Norbyte/lslib/releases). There is no compilation step:
 
 ```powershell
-$repo = (Get-Location).Path
-$divine = 'C:\Tools\ExportTool\Packed\Tools\Divine.exe'
-New-Item -ItemType Directory -Force -Path (Join-Path $repo 'dist') | Out-Null
-$pak = Join-Path $repo 'dist/FirstPersonExplorer_0.7.6.3_Public_Release_Main.pak'
-& $divine --action create-package --source (Join-Path $repo 'public-release-0763/src') --destination $pak --game bg3
-if ($LASTEXITCODE -ne 0) { throw 'PAK creation failed' }
-Compress-Archive -LiteralPath $pak -DestinationPath (Join-Path $repo 'dist/FirstPersonExplorer_0.7.6.3_Public_Release_Main_Vortex.zip') -Force
+Divine.exe --action convert-loca --source release-0.9.0/localization/English.xml --destination release-0.9.0/src/Localization/English/FirstPersonExplorer.loca --game bg3
+Divine.exe --action create-package --source release-0.9.0/src --destination TrueFirstPersonCamera_0.9.0_Main.pak --game bg3
 ```
 
-The ZIP contains a single PAK at its root. The main mod depends on the native DLL
-at runtime, but its packaging does not depend on compiling that DLL.
+The PAK's Lua was exercised in development against mocked Script Extender APIs (203
+scenarios) and tested in game; that harness depends on the development workspace and is
+not part of this repository.

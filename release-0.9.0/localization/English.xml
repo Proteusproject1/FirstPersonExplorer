@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<contentList>
+  <content contentuid="hfe8c0001g1130g4d20g80a0g001122334455" version="1">First-Person Combat</content>
+  <content contentuid="hfe8c0002g1130g4d20g80a0g001122334455" version="1">Toggle first-person combat on or off. Highlighted means enabled. Exploration first person remains available in either mode. Your choice follows your player when switching characters and is remembered across saves and restarts. No casting or resources required.</content>
+</contentList>

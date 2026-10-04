@@ -1,0 +1,47 @@
+{
+  "SchemaVersion": 1,
+  "Tabs": [
+    {
+      "TabId": "fpe_general",
+      "TabName": "General",
+      "Sections": [
+        {
+          "SectionId": "fpe_first_person",
+          "SectionName": "First person",
+          "Settings": [
+            {
+              "Id": "first_person_combat",
+              "Name": "First-person combat",
+              "Type": "checkbox",
+              "Default": false,
+              "Description": "Stay in first person when combat starts. Off returns to the normal tactical camera."
+            },
+            {
+              "Id": "body_style",
+              "Name": "Body style",
+              "Type": "radio",
+              "Default": "Full size",
+              "Options": {
+                "Choices": ["Full size", "Shrunken"]
+              },
+              "Description": "Full size: a classic first-person experience with optional floating weapons, normal torch light, and lingering buff glows on you hidden. Shrunken: a cleaner first-person view with less clutter in combat: small spell effects and a tiny move/jump preview. A held torch gives only a small light.",
+              "Tooltip": "Applies the next time you zoom into first person."
+            },
+            {
+              "Id": "render_held_items",
+              "Name": "Show held items",
+              "Type": "checkbox",
+              "Default": true,
+              "Description": "Show drawn weapons, shields and a held torch in first person.",
+              "VisibleIf": {
+                "Conditions": [
+                  { "SettingId": "body_style", "Operator": "==", "ExpectedValue": "Full size" }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

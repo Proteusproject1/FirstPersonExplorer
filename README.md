@@ -1,41 +1,42 @@
-# First Person Explorer
+# True First-Person Camera (formerly First Person Explorer)
 
-Source for First Person Explorer for
-[Baldur's Gate 3](https://www.nexusmods.com/baldursgate3/mods/24895):
-the **0.7.6.7 native DX11 DLL** and the 0.7.6.3 public-release main-mod Lua.
+Source for **True First-Person Camera 0.9.0** and its **Native DX11 0.7.7.0** component,
+a first-person camera mod for [Baldur's Gate 3](https://www.nexusmods.com/baldursgate3/mods/24895)
+covering exploration and optional combat.
 
-The mod hides the controlled character and supported equipment in first-person
-exploration, with temporary scale and camera-height compensation for targeting.
-It returns to normal visibility when leaving first person. Combat is excluded.
+The mod was renamed from First Person Explorer in 0.9.0. Only the displayed name changed:
+the module UUID, folder (`FirstPersonExplorer`), DLL file name and log locations are the same,
+so saves, load order and settings carry over.
+
+## What's in 0.9.0
+
+- **Settings in Mod Configuration Menu (MCM)**: first-person combat on/off, body style
+  (Full size or Shrunken), and show held items. MCM is now a required dependency.
+- **Full size** (new default): the body is hidden but not shrunk. Its physics group is made
+  click-through so it never blocks targeting; drawn weapons, shields and a held torch stay
+  visible; lingering buff visuals caused by the player or party are hidden while enemy and
+  world effects stay visible.
+- **Shrunken**: the earlier shrink-based behaviour, with footsteps played at a natural pace.
+- **Native 0.7.7.0**: the engine code it hooks is found by masked signature instead of
+  fixed addresses, so game hotfixes that only move code (like 2026-09-29) no longer break it.
 
 ## Contents
 
-- `public-release-0763/native/fpe_render.c`: complete native DX11 DLL source (0.7.6.7).
-- `public-release-0763/native/fpe_version.rc`: DLL version information resource.
-- `public-release-0763/native/verified_table.h`: exact-build table and method fingerprints.
-- `public-release-0763/native/test_render.c`: native tests.
-- `public-release-0763/src`: main-mod Lua, configuration, metadata and status definition from the 0.7.6.3 public release.
+- `release-0.9.0/src`: main mod source (Lua, metadata, MCM blueprint, stats definitions).
+- `release-0.9.0/localization/English.xml`: localization source (compiled to `.loca` by Divine).
+- `release-0.9.0/native`: complete native DX11 DLL source and tests, plus
+  [MinHook](https://github.com/TsudaKageyu/minhook) (BSD-2-Clause, `vendor/minhook/LICENSE.txt`).
 - [BUILD.md](BUILD.md): compiler, build and test instructions.
-- [REVIEW.md](REVIEW.md): native behavior and released artifact checksums for review.
+- [REVIEW.md](REVIEW.md): what the native DLL does, and the released artifacts' hashes.
+- `SHA256SUMS.txt`: hashes of this source snapshot.
 
-The folder keeps its `public-release-0763` name so existing links keep working.
-SHA256SUMS.txt identifies the published source snapshot.
-
-## 0.7.6.7 native changes
-
-The DLL is rebuilt without a C runtime to make it smaller and easier to inspect:
-193,536 bytes to 11,264 bytes, imports reduced to 14 KERNEL32 functions, no TLS
-callbacks or runtime exports, and an embedded version resource naming the product and
-this repository. Hook behavior is unchanged, and it is compatible with the current
-Nexus main PAK. In-game load and body/equipment hiding were confirmed by the author.
+Earlier releases remain available at the `v0.7.6.3` and `v0.7.6.7` tags.
 
 ## Runtime requirements
 
-Windows x64; BG3 Steam DX11 build 4.1.1.7398727; Native Mod Loader;
-Native Camera Tweaks; BG3 Script Extender 32+. Dependencies are installed separately.
-Vulkan is not supported. Both the main PAK and native DLL are needed for
-full equipment hiding. User-confirmed equipment fixes include violin, warhammer,
-shortbow and morningstar; this is not a claim of exhaustive equipment coverage.
+Windows x64, BG3 running in DirectX 11 (Vulkan unsupported), Native Mod Loader,
+Native Camera Tweaks, BG3 Script Extender 32+, Mod Configuration Menu 1.40.1+.
+Dependencies are installed separately; see the Nexus page for setup.
 
-The author publishes this source to make the release inspectable. No third-party
-game assets, NCT source, compiled toolchains, local logs or user data are included.
+This repository contains source, not game assets or dependency binaries. It includes no
+local logs, user data or compiled toolchains.
