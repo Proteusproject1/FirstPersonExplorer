@@ -3,7 +3,7 @@ param(
     # Optional: the locator test maps this executable read-only. Skipped if the file is absent.
     [string]$GameExe = 'C:\Program Files (x86)\Steam\steamapps\common\Baldurs Gate 3\bin\bg3_dx11.exe'
 )
-# True First-Person Camera Native DX11 0.7.7.0: tests, DLL and Vortex ZIP.
+# True First-Person Camera Native DX11 3.0.0.0: tests, DLL and Vortex ZIP.
 $ErrorActionPreference = 'Stop'
 $compiler = (Get-Command $Zig -ErrorAction Stop).Source
 $version = (& $compiler version).Trim()
@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0 -or $version -ne '0.16.0') { throw 'Use Zig 0.16.0 for t
 # The DLL links no C runtime, so Zig's bundled Windows headers are passed explicitly.
 $headers = Join-Path (Split-Path $compiler) 'lib/libc/include/any-windows-any'
 if (-not (Test-Path $headers)) { throw "Windows headers not found at $headers" }
-$native = Join-Path $PSScriptRoot 'release-0.9.0/native'
+$native = Join-Path $PSScriptRoot 'release-3.0.0/native'
 $vendor = Join-Path $native 'vendor/minhook'
 $mh = @("$vendor/src/hook.c", "$vendor/src/buffer.c", "$vendor/src/trampoline.c", "$vendor/src/hde/hde64.c")
 $work = Join-Path $PSScriptRoot ('build/native-' + [Guid]::NewGuid().ToString('N'))
@@ -29,6 +29,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Instant scale test compilation failed' }
     & "$work/test_scale_diag.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Instant scale tests failed' }
+    & $compiler cc "$native/test_camera.c" @mh -O2 -Wall -Wextra -Werror -o "$work/test_camera.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Camera test compilation failed' }
+    & "$work/test_camera.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Camera tests failed' }
     if (Test-Path -LiteralPath $GameExe) {
         # Maps the game executable like the Windows loader (read-only file access) and checks
         # the locator finds the hooked code, then that tampered copies are refused. The expected
@@ -40,14 +44,14 @@ try {
     } else { Write-Output "Locator test skipped: $GameExe not found." }
     # Zig's GNU frontend auto-exports C symbols, so objects are linked with its COFF linker.
     $objects = @()
-    foreach ($unit in @("$native/fpe_render.c", "$native/scale_diag.c", "$native/scale_diag_hook.S", "$native/locate.c", "$native/freestanding.c") + $mh) {
+    foreach ($unit in @("$native/fpe_render.c", "$native/scale_diag.c", "$native/scale_diag_hook.S", "$native/locate.c", "$native/camera.c", "$native/freestanding.c") + $mh) {
         $object = Join-Path $work ([IO.Path]::GetFileNameWithoutExtension($unit) + '.obj')
         & $compiler cc -target x86_64-windows-gnu -isystem $headers -O2 -Wall -Wextra -Werror -ffreestanding -c $unit -o $object
         if ($LASTEXITCODE -ne 0) { throw "Object compilation failed: $unit" }
         $objects += $object
     }
     # A throwaway build-lib run supplies the x86_64 KERNEL32 import library in the Zig cache.
-    & $compiler build-lib -target x86_64-windows-gnu -isystem $headers -dynamic -O ReleaseFast -fno-dll-export-fns -fentry=_DllMainCRTStartup -fno-compiler-rt -fno-ubsan-rt -lkernel32 -fstrip "-femit-bin=$work/import-probe.dll" -cflags -O2 -Wall -Wextra -Werror -ffreestanding -- "$native/fpe_render.c" "$native/scale_diag.c" "$native/scale_diag_hook.S" "$native/locate.c" "$native/freestanding.c" @mh
+    & $compiler build-lib -target x86_64-windows-gnu -isystem $headers -dynamic -O ReleaseFast -fno-dll-export-fns -fentry=_DllMainCRTStartup -fno-compiler-rt -fno-ubsan-rt -lkernel32 -fstrip "-femit-bin=$work/import-probe.dll" -cflags -O2 -Wall -Wextra -Werror -ffreestanding -- "$native/fpe_render.c" "$native/scale_diag.c" "$native/scale_diag_hook.S" "$native/locate.c" "$native/camera.c" "$native/freestanding.c" @mh
     if ($LASTEXITCODE -ne 0) { throw 'Import library probe failed' }
     $resource = Join-Path $work 'fpe_version.res'
     & $compiler rc /i $headers /fo $resource "$native/fpe_version.rc"
@@ -63,7 +67,7 @@ try {
     $stamp = [BitConverter]::ToInt32($bytes, 0x3c) + 8
     for ($i = 0; $i -lt 4; $i++) { $bytes[$stamp + $i] = 0 }
     $normalized = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)) -replace '-', ''
-    $zip = Join-Path $dist 'TrueFirstPersonCamera_Native_DX11_0.7.7.0_Vortex.zip'
+    $zip = Join-Path $dist 'TrueFirstPersonCamera_Native_DX11_3.0.0.0_Vortex.zip'
     if (Test-Path $zip) { Remove-Item -LiteralPath $zip }
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
     $stream = [IO.File]::Open($zip, [IO.FileMode]::CreateNew)
@@ -74,8 +78,8 @@ try {
     } finally { $archive.Dispose(); $stream.Dispose() }
     Get-FileHash -LiteralPath $dll, $zip -Algorithm SHA256
     Write-Output "DLL SHA-256 with the PE timestamp zeroed: $normalized"
-    if ($normalized -eq '31D8F9EAD9F91E0CB7474C716513E2054621D82E26086C7C2910A4FA34FA6326') { Write-Output 'Matches the released 0.7.7.0 DLL (apart from its build timestamp).' }
-    else { Write-Output 'Does NOT match the released 0.7.7.0 DLL.' }
+    if ($normalized -eq '4357C5282C7F3AE71E9DFEB1BB0F43AC993A6D8B66E50D94691DAB4E44431CD0') { Write-Output 'Matches the released 3.0.0.0 DLL (apart from its build timestamp).' }
+    else { Write-Output 'Does NOT match the released 3.0.0.0 DLL.' }
 } finally {
     Pop-Location
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

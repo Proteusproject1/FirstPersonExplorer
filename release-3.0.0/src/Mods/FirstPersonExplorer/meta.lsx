@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<save>
+    <version major="4" minor="8" revision="0" build="500"/>
+    <region id="Config">
+        <node id="root">
+            <children>
+                <node id="Conflicts"/>
+                <node id="Dependencies">
+                    <children>
+                        <node id="ModuleShortDesc">
+                            <attribute id="Folder" type="LSString" value="BG3MCM"/>
+                            <attribute id="MD5" type="LSString" value=""/>
+                            <attribute id="Name" type="LSString" value="Mod Configuration Menu"/>
+                            <attribute id="PublishHandle" type="uint64" value="0"/>
+                            <attribute id="UUID" type="FixedString" value="755a8a72-407f-4f0d-9a33-274ac0f0b53d"/>
+                            <attribute id="Version64" type="int64" value="41658298700660736"/>
+                        </node>
+                    </children>
+                </node>
+                <node id="ModuleInfo">
+                    <attribute id="Author" type="LSString" value="First Person Explorer project"/>
+                    <attribute id="CharacterCreationLevelName" type="FixedString" value=""/>
+                    <attribute id="Description" type="LSString" value="True First-Person Camera 3.0: play in first person with your full body (arms, weapons and armour; only your head is hidden), optional first-person combat, and a classic hidden-body view. Settings in Mod Configuration Menu. Requires Mod Configuration Menu and the True First-Person Camera Native DX11 component 3.0."/>
+                    <attribute id="FileSize" type="uint64" value="0"/>
+                    <attribute id="Folder" type="LSString" value="FirstPersonExplorer"/>
+                    <attribute id="LobbyLevelName" type="FixedString" value=""/>
+                    <attribute id="MD5" type="LSString" value=""/>
+                    <attribute id="MenuLevelName" type="FixedString" value=""/>
+                    <attribute id="Name" type="LSString" value="True First-Person Camera"/>
+                    <attribute id="NumPlayers" type="uint8" value="1"/>
+                    <attribute id="PhotoBooth" type="FixedString" value=""/>
+                    <attribute id="PublishHandle" type="uint64" value="0"/>
+                    <attribute id="StartupLevelName" type="FixedString" value=""/>
+                    <attribute id="UUID" type="FixedString" value="f2ce5698-135a-4bb2-b58b-b7e946a83c08"/>
+                    <attribute id="Version64" type="int64" value="108086391056891904"/>
+                    <children>
+                        <node id="PublishVersion">
+                            <attribute id="Version64" type="int64" value="108086391056891904"/>
+                        </node>
+                        <node id="Scripts"/>
+                    </children>
+                </node>
+            </children>
+        </node>
+    </region>
+</save>

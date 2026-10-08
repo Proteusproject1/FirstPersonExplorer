@@ -1,12 +1,28 @@
 local DIAGNOSTICS=false
 -- First Person Explorer (Combat): first-person body hiding extended into combat.
 -- Selected-ally combat first person; retain that viewpoint across enemy/environment turns.
-local VERSION = "0.9.0"
+local VERSION = "3.0.0"
 local TARGET_SCALE = 0.01
 local ENTER, EXIT = 0.5, 0.8
 local HIDE_COMMAND = {0.000011,0.000013,0.000017}
 local SHOW_COMMAND = {0.000017,0.000013,0.000011}
 local PROBE_COMMAND = {0.000019,0.000023,0.000029}
+-- 0.10.2 full body: "this hidden object is the head" (native 0.7.10.0-exp keeps a list of them and
+-- reads their live world bounds to place the eye). Older natives reject it; then the pivot is used.
+local HEAD_COMMAND = {0.000023,0.000029,0.000031}
+local headTagsOff = false
+-- 0.10.3: full body in use right now (the setting, except in combat with "Body in combat: Hide").
+local fullActive = false
+-- "Is the full-body camera installed?" Native 0.8.0.0+ (3.0.0.0) consumes this signal only while its
+-- camera hooks are in place; otherwise the scale is restored and the classic view is used.
+-- Asked once per session (nil = not asked yet).
+local CAMERA_COMMAND = {0.000029,0.000031,0.000037}
+local cameraNative = nil
+-- Heads found by shape (modded heads with neutral file names): entity handle -> {renderable key=true}.
+local shapeHeads, shapeChecked = {}, {}
+-- In combat (Full body view): what stays visible. nil = the full body; "hands" = held items and hand
+-- armour; "weapons" = held items; "nothing" = nothing. The camera stays on the head in every case.
+local combatKeep = nil
 local active, owner, blocked, lastStatus = false, nil, false, ""
 local hidden = {} -- Entity handle -> registered renderable identity (no retained proxies)
 local lastWaiting = ""
@@ -17,6 +33,28 @@ local scaleClient = Ext.Require("ScaleClient.lua")(settings)
 local selection = Ext.Require("Selection.lua")()
 local combatCamera = Ext.Require("CombatCamera.lua")()
 local combatMode = Ext.Require("CombatModeClient.lua")(settings)
+local fullBody = Ext.Require("FullBody.lua")(settings)
+-- "Mark moment" hotkey (MCM keybinding fb_mark). MCM may not be ready at load; retried each tick.
+local markBound = false
+local function bindMark()
+    if markBound or type(MCM)~="table" or type(MCM.Keybinding)~="table" then return end
+    markBound = pcall(MCM.Keybinding.SetCallback, "fb_mark", function() pcall(fullBody.mark) end) == true
+end
+bindMark()
+-- "Reset to recommended settings" button (MCM event_button reset_recommended). Retried each tick
+-- until MCM is ready, like the hotkey.
+local resetBound = false
+local function bindReset()
+    if resetBound or type(MCM)~="table" or type(MCM.EventButton)~="table" or type(MCM.EventButton.RegisterCallback)~="function" then return end
+    local ok, registered = pcall(MCM.EventButton.RegisterCallback, "reset_recommended", function()
+        local n = settings.resetAll()
+        if type(MCM.EventButton.ShowFeedback)=="function" then
+            pcall(MCM.EventButton.ShowFeedback, "reset_recommended", n > 0 and "Recommended settings restored." or "Could not reach Mod Configuration Menu.", n > 0 and "success" or "error")
+        end
+    end)
+    resetBound = ok and registered ~= false
+end
+bindReset()
 local manualCombatExit=false
 local controllerZoomUntil, controllerAxis = 0, 0
 local controllerZoomHeld=false -- NCT default: hold LeftStick to zoom, RightY to pitch otherwise.
@@ -135,11 +173,52 @@ local function isHeld(a)
         .. tostring(read(function() return a.Bone1 end) or "") .. "|" .. tostring(read(function() return a.Bone2 end) or ""))
     return bones:find("hand",1,true) ~= nil and bones:find("sheath",1,true) == nil
 end
-local function walk(e, callback)
+-- Full body (since 0.10.0): with full body on, only head parts are hidden, chosen by the
+-- "Hide" setting. Classification uses the mesh file name and attachment bones; every attachment's
+-- class is logged once per entry to fullbody_renderables.tsv so misses can be fixed.
+local HIDE_LEVELS = {["Head only"]={head=true}, ["Head + hair"]={head=true,hair=true},
+    ["Head + hair + headwear"]={head=true,hair=true,headwear=true}}
+local classRows, classSeen = {}, {}
+local function attachBones(a)
+    if not a then return "" end
+    return string.lower(tostring(read(function() return a.Attach end) or "") .. "|"
+        .. tostring(read(function() return a.Bone1 end) or "") .. "|" .. tostring(read(function() return a.Bone2 end) or ""))
+end
+local function anyOf(s, words) for _, w in ipairs(words) do if s:find(w, 1, true) then return true end end; return false end
+local function headClass(desc, a)
+    local file = ((desc:match("^[^|]*") or ""):match("([^/]*)$")) or ""
+    -- "..._headwear.gr2" is a helmet, not a head (it must never move the eye).
+    if anyOf(file, {"headwear", "headgear", "helmet"}) then return "headwear" end
+    if anyOf(file, {"head", "eye", "teeth", "tongue", "lash"}) then return "head" end
+    if desc:find("|hair", 1, true) or anyOf(file, {"hair", "beard", "horn", "mustache", "moustache"}) then return "hair" end
+    -- Modded heads often have neutral file names but live in a "...heads..." folder
+    -- (e.g. vemperens_heads/ms_dorian/elf_ms_dorian.gr2).
+    local folder = (desc:match("^[^|]*") or ""):match("^(.*)/[^/]*$") or ""
+    if folder:find("head", 1, true) and not folder:find("headwear", 1, true) then return "head" end
+    if attachBones(a):find("head", 1, true) or anyOf(file, {"helmet", "hlm", "_hat", "hat_", "hood", "circlet", "crown", "mask", "cowl", "tiara", "veil"}) then return "headwear" end
+    return nil
+end
+-- Hand armour (separate meshes; bare arms and hands are part of the body mesh and cannot be split).
+local function handWear(desc)
+    local file = ((desc:match("^[^|]*") or ""):match("([^/]*)$")) or ""
+    return anyOf(file, {"glove", "gauntlet", "bracer", "vambrace", "_hands", "hands_"})
+end
+local function noteClass(cls, desc, a)
+    if not settings.fb.logs then return end
+    local row = tostring(cls or "body") .. "\t" .. attachBones(a) .. "\t" .. desc:gsub("[\r\n\t]", " ")
+    if classSeen[row] or #classRows >= 200 then return end
+    classSeen[row] = true
+    classRows[#classRows + 1] = row
+    pcall(Ext.IO.SaveFile, "FirstPersonExplorer/fullbody_renderables.tsv", VERSION .. "\nclass\tattach|bone1|bone2\tasset\n" .. table.concat(classRows, "\n") .. "\n")
+end
+local function walk(e, callback, shapeKeys)
     local start = root(e)
     if not start then return end
     local visited = {}
-    local function visit(v, path, inheritedAccessory, attachment, depth, inheritedHeld)
+    local full = fullActive
+    local level = HIDE_LEVELS[settings.fb.hide] or HIDE_LEVELS["Head + hair + headwear"]
+    local everything = full and fullBody.wholeBodyHidden()
+    local function visit(v, path, inheritedAccessory, attachment, depth, inheritedHeld, inheritedHead)
         if depth > 16 then error("Visual tree exceeds depth limit") end
         local id = tostring(v)
         if visited[id] then return end
@@ -152,6 +231,15 @@ local function walk(e, callback)
         local desc = describe(v, attachment)
         local held = inheritedHeld or (depth > 0 and isHeld(attachment))
         local target = not held
+        local head = inheritedHead
+        if full then
+            if not head and depth > 0 then head = headClass(desc, attachment); noteClass(head, desc, attachment) end
+            if everything then target = true
+            elseif combatKeep == "hands" then target = not held and not (head == nil and handWear(desc))
+            elseif combatKeep == "weapons" then target = not held
+            elseif combatKeep == "nothing" then target = true
+            else target = head ~= nil and level[head] == true end
+        end
         -- Only positively identified attached weapon/instrument subtrees may
         -- degrade independently. Never classify by generic RenderableObject type.
         local accessory = inheritedAccessory or (depth > 0 and
@@ -161,14 +249,18 @@ local function walk(e, callback)
             for index, object in pairs(v.ObjectDescs or {}) do
                 local r = object.Renderable
                 -- Identity must survive attachment reordering while scaled.
-                if r then callback(r, tostring(r), target, desc .. " visualpath=" .. path .. "/" .. tostring(index), accessory) end
+                if r then
+                    local cls, t = head, target
+                    if full and not cls and not held and shapeKeys and shapeKeys[tostring(r)] then cls = "head"; t = everything or level.head == true end
+                    callback(r, tostring(r), t, desc .. " visualpath=" .. path .. "/" .. tostring(index), accessory, cls)
+                end
             end
         end
         for i, a in pairs(v.Attachments or {}) do
-            if a.Visual then visit(a.Visual, path .. "/" .. tostring(i), accessory, a, depth + 1, held) end
+            if a.Visual then visit(a.Visual, path .. "/" .. tostring(i), accessory, a, depth + 1, held, head) end
         end
     end
-    visit(start, "root", false, nil, 0, false)
+    visit(start, "root", false, nil, 0, false, nil)
 end
 local function restore()
     local failures = 0
@@ -194,6 +286,8 @@ local function restore()
     return failures == 0
 end
 local function leave(reason)
+    pcall(fullBody.stop, reason)
+    shapeHeads, shapeChecked = {}, {}
     local cameraOK,cameraError=pcall(combatCamera.stop)
     local scaleOK,scaleError=pcall(scaleClient.stop)
     local changed = active or next(hidden) ~= nil
@@ -224,14 +318,17 @@ local function suppress(handle, e)
                 else unsupported[#unsupported + 1] = detail end
             end
         end
-    end)
+    end, shapeHeads[handle])
     if #unsupported > 0 then
         pcall(Ext.IO.SaveFile, "FirstPersonExplorer/unsupported_renderables.txt", VERSION .. "\n" .. table.concat(unsupported, "\n"))
         error(tostring(#unsupported) .. " unsupported renderables; full list in unsupported_renderables.txt. No partial suppression applied this tick.")
     end
     hidden[handle] = hidden[handle] or {}
     local entries, count, lines, scaledCount, overwritten = hidden[handle], 0, {}, 0, 0
-    walk(e, function(r, key, target, desc)
+    local fullHead, headRs = fullActive, {}
+    local bodyParts = {}
+    walk(e, function(r, key, target, desc, accessory, cls)
+        if fullHead and not cls and not accessory then bodyParts[#bodyParts + 1] = {r=r, key=key} end
         if not target then
             -- An item hidden earlier and now held (weapon drawn in first person) is shown again.
             local previous = entries[key]
@@ -242,18 +339,53 @@ local function suppress(handle, e)
         local saved = entries[key] or {}
         entries[key] = saved
         nativeCommand(r, HIDE_COMMAND)
-        do
+        if fullHead and cls == "head" then
+            -- Full body: the head keeps its real size so its live world bounds give the eye position;
+            -- click-through keeps it out of targeting. A size from an earlier entry is given back.
+            headRs[#headRs + 1] = r
+            if saved.original then restoreScale(r, saved) end
+            if not headTagsOff and not pcall(nativeCommand, r, HEAD_COMMAND) then
+                headTagsOff = true
+                log("ERROR: native component does not support the head anchor (needs 0.7.10.0-exp); the camera pivot is used")
+            end
+        else do
             if not saved.original then
                 saved.original = scale(r)
                 saved.applied = {saved.original[1]*TARGET_SCALE,saved.original[2]*TARGET_SCALE,saved.original[3]*TARGET_SCALE}
             elseif not sameScale(scale(r),saved.applied) then overwritten=overwritten+1 end
             setScaleChecked(r,saved.applied)
             scaledCount=scaledCount+1
-        end
+        end end
         count = count + 1
         if DIAGNOSTICS then lines[#lines + 1] = key .. " scale=" .. table.concat(scale(r), ",") .. " asset=" .. desc end
-    end)
+    end, shapeHeads[handle])
     if count == 0 then error("No suppressible character renderables found; no working first-person suppression") end
+    -- No head found by name -> look once for it by shape: small parts (at most 45 cm) whose
+    -- centre is within 35 cm of the top of the character. They are treated as head from the next tick.
+    if fullHead and #headRs == 0 and not shapeChecked[handle] then
+        shapeChecked[handle] = true
+        local boxes, top = {}, nil
+        for _, part in ipairs(bodyParts) do
+            local lo = read(function() local m = part.r.WorldBound.Min; return {m[1], m[2], m[3]} end)
+            local hi = read(function() local m = part.r.WorldBound.Max; return {m[1], m[2], m[3]} end)
+            if type(lo) == "table" and type(hi) == "table" and type(lo[2]) == "number" and type(hi[2]) == "number" then
+                boxes[#boxes + 1] = {key=part.key, lo=lo, hi=hi}
+                if not top or hi[2] > top then top = hi[2] end
+            end
+        end
+        local found = {}
+        for _, bx in ipairs(boxes) do
+            local small = bx.hi[1] - bx.lo[1] <= 0.45 and bx.hi[2] - bx.lo[2] <= 0.45 and bx.hi[3] - bx.lo[3] <= 0.45
+            if small and (bx.lo[2] + bx.hi[2]) / 2 >= top - 0.35 then found[bx.key] = true; found.n = (found.n or 0) + 1 end
+        end
+        if found.n then
+            shapeHeads[handle] = found
+            if settings.fb.logs then
+                pcall(Ext.IO.SaveFile, "FirstPersonExplorer/head_by_shape.txt", VERSION .. "\nno head found by name; " .. found.n .. " part(s) near the top of the character are treated as the head\n")
+            end
+        end
+    end
+    pcall(fullBody.setHeads, headRs)
     local warning = table.concat(accessoryWarnings,"\n")
     if warning ~= lastAccessoryWarning then
         lastAccessoryWarning = warning
@@ -364,6 +496,8 @@ local function tick()
     -- re-enters with the new settings. Combat on/off goes through combatMode below.
     settings.poll(Ext.Utils.MonotonicTime())
     if settings.consumeRestyle() and active then leave("settings changed"); return end
+    bindMark()
+    bindReset()
     combatMode.poll()
     if not combatMode.enabled and combatCamera.active() then
         combatCamera.stop(true); requireInwardScroll=true; manualCombatExit=false
@@ -457,11 +591,30 @@ local function tick()
     end
     if not active and requireInwardScroll then waiting("scroll inward to re-enter first person"); return end
     if not active and not transfer and d > ENTER then waiting("camera distance above entry threshold"); return end
+    -- Body in combat: switch between the full-body and the classic view in place, without leaving
+    -- first person (a drop-out could let the combat zoom-out block re-entry). suppress() below
+    -- re-classifies every part this tick; the camera lock stops with the full-body view.
+    if settings.fullBody() and cameraNative == nil then
+        -- Ask the DLL once per session through any renderable of the character.
+        local probe = nil
+        pcall(walk, c.e, function(r, key, target, desc, accessory) if not accessory then probe = probe or r end end)
+        if probe then
+            cameraNative = pcall(nativeCommand, probe, CAMERA_COMMAND)
+            settings.noCamera = not cameraNative
+            if not cameraNative then log("DISABLED: Full body needs the True First-Person Camera Native DX11 component 3.0 with its camera hooks; using the Hidden body view") end
+        end
+    end
+    local wantFull = settings.fullBody() and cameraNative == true
+    local view = settings.combatView()
+    combatKeep = (wantFull and c.combat == true and view ~= "show") and view or nil
+    if active and fullActive and not wantFull then pcall(fullBody.stop, "full body: classic view in combat") end
+    fullActive = wantFull
     lastWaiting = ""
     active, owner = true, c.handle
     suppress(c.handle, c.e)
     scaleClient.update(c)
     combatCamera.update(c)
+    fullBody.update(c, fullActive)
     if not c.b.SelectMode then
         targetingReference = read(function()
             local p = c.b.TargetCurrent
@@ -515,6 +668,6 @@ Ext.Events.GameStateChanged:Subscribe(function(e)
     saveState(state)
     if state~="Running" and state~="Save" then targetingReference=nil; leave("state transition"); selection.reset(); manualCombatExit=false end
 end)
-Ext.Events.SessionLoaded:Subscribe(function() targetingReference=nil; leave("session loaded"); scaleClient.reset(); selection.reset(); combatMode.reset(); manualCombatExit=false; controllerZoomHeld=false; controllerLastZoom=nil; controllerAxis=0; blocked = next(hidden) ~= nil; lastStatus = ""; retryAt = 0; retryError = "" end)
+Ext.Events.SessionLoaded:Subscribe(function() targetingReference=nil; cameraNative=nil; settings.noCamera=false; leave("session loaded"); scaleClient.reset(); selection.reset(); combatMode.reset(); manualCombatExit=false; controllerZoomHeld=false; controllerLastZoom=nil; controllerAxis=0; blocked = next(hidden) ~= nil; lastStatus = ""; retryAt = 0; retryError = "" end)
 Ext.Events.ResetCompleted:Subscribe(function() leave("extender reset"); combatMode.reset(); selection.reset() end)
-log("Loaded " .. VERSION .. "; settings from Mod Configuration Menu (settings.txt shows the values in use); selected ally first person retained through enemy turns; DX11 bridge required.")
+log("Loaded " .. VERSION .. "; settings from Mod Configuration Menu (settings.txt shows the values in use); Full body requires Native DX11 3.0.0.0; DX11 bridge required.")

@@ -1,6 +1,8 @@
 #define FPE_TEST
 #include <stdio.h>
 #include "fpe_render.c"
+static int fake_camera_ready;
+int fpe_camera_ready(void) { return fake_camera_ready; }
 #undef NDEBUG
 #include <assert.h>
 static volatile LONG scale_calls,render_calls,destroy_calls[4];
@@ -58,5 +60,31 @@ int main(void) {
     MEMORY_BASIC_INFORMATION mbi;VirtualQuery(page,&mbi,sizeof(mbi));assert(mbi.Protect==PAGE_READONLY);
     VirtualFree(page,0,MEM_RELEASE);
     puts("PASS native: 4 table dispatch including static equipment, preflight, drawn-object identity, unrelated objects, animation, destructor routing, expiry, capacity, 4-thread stress, protected-slot install/conflict/rollback");
+    /* 0.7.10.0 head tags: consumed (never forwarded as a scale), listed while fresh, dropped on destroy. */
+    {
+        int heads_a, heads_b; void *list[8];
+        LONG before=scale_calls;
+        scale_hooks[0](&heads_a,head_signal); scale_hooks[1](&heads_b,head_signal);
+        assert(scale_calls==before);
+        assert(fpe_head_objects(list,8)==2);
+        scale_hooks[0](&heads_a,head_signal);                     /* renew, no duplicate */
+        assert(fpe_head_objects(list,8)==2);
+        destroy_hooks[0](&heads_a,1);
+        assert(fpe_head_objects(list,8)==1 && list[0]==&heads_b);
+        AcquireSRWLockExclusive(&head_lock); for(int i=0;i<8;i++) if(heads[i].object==&heads_b) heads[i].until=GetTickCount64()-1; ReleaseSRWLockExclusive(&head_lock);
+        assert(fpe_head_objects(list,8)==0);                       /* expired */
+        int many[10]; for(int i=0;i<10;i++) scale_hooks[0](&many[i],head_signal);
+        assert(fpe_head_objects(list,8)==8);                       /* bounded */
+        float big[3]={1,1,1}; before=scale_calls; scale_hooks[0](&many[0],big); assert(scale_calls==before+1);
+        puts("PASS head tags: consumed, renewed without duplicates, dropped on destroy, expire, bounded; normal scales still forwarded");
+    }
+    /* 0.8.0.0 camera capability: consumed only while the camera hooks are installed. */
+    {
+        int probe; LONG before=scale_calls;
+        fake_camera_ready=0; scale_hooks[2](&probe,camera_signal); assert(scale_calls==before+1);
+        fake_camera_ready=1; scale_hooks[2](&probe,camera_signal); assert(scale_calls==before+1);
+        assert(!should_hide(&probe,GetTickCount64()));
+        puts("PASS camera capability: answered (consumed) only with the camera installed, otherwise forwarded like any scale");
+    }
     return 0;
 }

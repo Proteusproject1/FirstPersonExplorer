@@ -102,7 +102,7 @@ static HANDLE open_diagnostic(HMODULE module) {
 void scale_diag_run(HMODULE module,unsigned char *hook_point,const char *locate_failure) {
     HANDLE file=open_diagnostic(module);
     if(file==INVALID_HANDLE_VALUE) return;
-    write_text(file,"FPE Native 0.7.7.0 INSTANT SCALE; one-shot PAK authorization required\n");
+    write_text(file,"FPE Native 3.0.0.0 INSTANT SCALE; one-shot PAK authorization required\n");
     if(!mailbox_init()) { write_text(file,"DISABLED: mailbox path unavailable\n"); CloseHandle(file); return; }
     /* locate.c verified the full function (masked only for moved code) and the hook instructions. */
     if(!hook_point) {
@@ -110,14 +110,16 @@ void scale_diag_run(HMODULE module,unsigned char *hook_point,const char *locate_
         write_text(file,"; rendering bridge remains independent\n");
         CloseHandle(file); return;
     }
+    /* MinHook is shared with the camera hook (0.7.8.0); it may already be initialised. */
     MH_STATUS status=MH_Initialize();
+    if(status==MH_ERROR_ALREADY_INITIALIZED) status=MH_OK;
     if(status!=MH_OK) { write_count(file,"DISABLED: MinHook initialize status=",status); CloseHandle(file); return; }
     void *target=hook_point;
     status=MH_CreateHook(target,(void*)scale_diag_hook,&scale_diag_trampoline);
     if(status==MH_OK) status=MH_EnableHook(target);
     if(status!=MH_OK) {
         write_count(file,"DISABLED: diagnostic hook status=",status);
-        MH_RemoveHook(target); MH_Uninitialize(); CloseHandle(file); return;
+        MH_RemoveHook(target); CloseHandle(file); return;
     }
     write_text(file,"READY: guarded instant transitions; native-clock ticket TTL=350ms; other scale multipliers fall back\n");
     write_text(file,"uptime_ms\tserver_entity_hex\tfield0_f32_hex\ttarget_f32_hex\tcurrent_f32_hex\tvisual_f32_hex\tsnapped\n");

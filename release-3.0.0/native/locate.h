@@ -15,6 +15,10 @@ typedef struct {
     const char *scale_failure;    /* instant scale: NULL when the hook point was found */
     unsigned int stamp;           /* PE build stamp, for the log only */
     unsigned int table_count;     /* candidate tables found (diagnostics) */
+    unsigned char *camera_update; /* 0.7.8.0 experiment: camera update function entry */
+    unsigned char *camera_zoom;   /* 0.7.9.0 experiment: camera zoom step, called just before the final eye */
+    const char *camera_failure;   /* NULL when the camera update was found */
+    int eye_fix_ok;               /* 0.8.0.0: the update's final eye reads its distance from 0x15C (eye fix allowed) */
 } FpeLocation;
 void fpe_locate(unsigned char *image, FpeLocation *out);
 BOOL fpe_masked_equal(const unsigned char *candidate, const unsigned char *reference, SIZE_T size);

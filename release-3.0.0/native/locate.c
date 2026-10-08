@@ -6,6 +6,7 @@
 /* Reference code and table layout from the verified 4.1.1.7398727 executable. */
 #include "verified_table.h"
 #include "verified_scale.h"
+#include "verified_camera.h"
 
 #define SCALE_HOOK_OFFSET (SCALE_HOOK_RVA-SCALE_UPDATE_RVA)
 #define MAX_RANGES 64
@@ -111,16 +112,36 @@ static BOOL same_layout(void **found[4],const int order[4]) {
     }
     return TRUE;
 }
+/* 0.8.0.0: the camera update copies Distance to 0x15C and builds the final eye from 0x15C right after
+   (mov [rdi+0x15C],eax ; movss xmm2,[rdi+0x15C]). The eye fix writes 0x15C, so it is allowed only when
+   this exact pair appears once in the update's first 0x1400 bytes, all inside readable code. */
+static const unsigned char eye_distance_bytes[14]={0x89,0x87,0x5c,0x01,0x00,0x00,0xf3,0x0f,0x10,0x97,0x5c,0x01,0x00,0x00};
+#define EYE_SEARCH 0x1400
+static int eye_distance_found(const Range *code,int codes,const unsigned char *update) {
+    if(!inside(code,codes,update,EYE_SEARCH)) return 0;
+    int count=0;
+    for(SIZE_T i=0;i+sizeof(eye_distance_bytes)<=EYE_SEARCH;i++) {
+        SIZE_T k=0; while(k<sizeof(eye_distance_bytes) && update[i+k]==eye_distance_bytes[k]) k++;
+        if(k==sizeof(eye_distance_bytes)) count++;
+    }
+    return count==1;
+}
 void fpe_locate(unsigned char *image,FpeLocation *out) {
     Range code[MAX_RANGES],data[MAX_RANGES]; int codes,datas;
     for(SIZE_T i=0;i<sizeof(*out);i++) ((unsigned char*)out)[i]=0;
     out->scale_failure="not checked (render bridge unavailable)";
+    out->camera_failure="not checked (render bridge unavailable)";
     if(!sections(image,code,&codes,data,&datas,&out->stamp)) { out->failure="executable layout not recognised"; return; }
-    Pattern p[3]={
+    Pattern p[5]={
         {verified_bytes[0][1],32,prefix_of(verified_bytes[0][1]),0,0},  /* slot 4: scale  */
         {verified_bytes[0][2],32,prefix_of(verified_bytes[0][2]),0,0},  /* slot 20: render */
-        {scale_update_bytes,sizeof(scale_update_bytes),prefix_of(scale_update_bytes),0,0}};
-    scan(code,codes,p,3);
+        {scale_update_bytes,sizeof(scale_update_bytes),prefix_of(scale_update_bytes),0,0},
+        {camera_update_bytes,sizeof(camera_update_bytes),prefix_of(camera_update_bytes),0,0},
+        {camera_zoom_bytes,sizeof(camera_zoom_bytes),prefix_of(camera_zoom_bytes),0,0}};
+    scan(code,codes,p,5);
+    if(p[3].count!=1) out->camera_failure=p[3].count?"camera update found more than once":"camera update not found";
+    else if(p[4].count!=1) out->camera_failure=p[4].count?"camera zoom step found more than once":"camera zoom step not found";
+    else { out->camera_update=p[3].hit; out->camera_zoom=p[4].hit; out->camera_failure=0; out->eye_fix_ok=eye_distance_found(code,codes,p[3].hit); }
     /* Instant scale is independent of the render bridge, exactly as before. */
     if(p[2].count==0) out->scale_failure="scale-transition function not found";
     else if(p[2].count>1) out->scale_failure="scale-transition function found more than once";

@@ -1,8 +1,8 @@
 #include <winver.h>
 
 1 VERSIONINFO
-FILEVERSION 0,7,7,0
-PRODUCTVERSION 0,7,7,0
+FILEVERSION 3,0,0,0
+PRODUCTVERSION 3,0,0,0
 FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
 FILEFLAGS 0x0L
 FILEOS VOS_NT_WINDOWS32
@@ -14,12 +14,12 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "CompanyName", "First Person Explorer project"
-            VALUE "FileDescription", "First Person Explorer - DX11 render bridge and instant scale"
-            VALUE "FileVersion", "0.7.7.0"
+            VALUE "FileDescription", "True First-Person Camera - DX11 render bridge, instant scale, full-body camera"
+            VALUE "FileVersion", "3.0.0.0"
             VALUE "InternalName", "FirstPersonExplorerNative"
             VALUE "OriginalFilename", "FirstPersonExplorerNative.dll"
             VALUE "ProductName", "First Person Explorer"
-            VALUE "ProductVersion", "0.7.7.0"
+            VALUE "ProductVersion", "3.0.0.0"
             VALUE "Comments", "Open source: https://github.com/Proteusproject1/FirstPersonExplorer"
         END
     END

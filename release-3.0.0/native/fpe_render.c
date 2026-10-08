@@ -7,6 +7,8 @@
 #ifndef FPE_TEST
 #include "scale_diag.h"
 #include "locate.h"
+#include "camera.h"
+#include "vendor/minhook/include/MinHook.h"
 #endif
 typedef void (*ScaleFn)(void *, const float *);
 typedef void (*RenderFn)(void *, const void *, const void *, const void *);
@@ -22,6 +24,35 @@ static volatile LONG enabled, hidden_calls, drawn_calls, registrations;
 static const float hide_signal[3] = {0.000011f,0.000013f,0.000017f};
 static const float show_signal[3] = {0.000017f,0.000013f,0.000011f};
 static const float probe_signal[3] = {0.000019f,0.000023f,0.000029f};
+/* 0.7.10.0: "this hidden object is part of the head" (full body). Consumed, never forwarded. */
+static const float head_signal[3] = {0.000023f,0.000029f,0.000031f};
+/* 0.8.0.0: "is the full-body camera here?" Consumed only while the camera hooks are installed, so an
+   older or camera-disabled DLL forwards it and the PAK (which restores the scale) falls back to classic. */
+static const float camera_signal[3] = {0.000029f,0.000031f,0.000037f};
+int fpe_camera_ready(void);
+typedef struct { void *object; ULONGLONG until; } HeadEntry;
+static HeadEntry heads[8];
+static SRWLOCK head_lock = SRWLOCK_INIT;
+static void tag_head(void *object, ULONGLONG now) {
+    int slot=-1;
+    AcquireSRWLockExclusive(&head_lock);
+    for(int i=0;i<8;i++) { if(heads[i].object==object) { slot=i; break; } if(slot<0 && (!heads[i].object || heads[i].until<=now)) slot=i; }
+    if(slot>=0) heads[slot]=(HeadEntry){object,now+500};
+    ReleaseSRWLockExclusive(&head_lock);
+}
+static void untag_head(void *object) {
+    AcquireSRWLockExclusive(&head_lock);
+    for(int i=0;i<8;i++) if(heads[i].object==object) heads[i]=(HeadEntry){0,0};
+    ReleaseSRWLockExclusive(&head_lock);
+}
+/* Live head objects (tagged within the last 500 ms and not destroyed since). */
+int fpe_head_objects(void **out, int max) {
+    int n=0; ULONGLONG now=GetTickCount64();
+    AcquireSRWLockShared(&head_lock);
+    for(int i=0;i<8 && n<max;i++) if(heads[i].object && heads[i].until>now) out[n++]=heads[i].object;
+    ReleaseSRWLockShared(&head_lock);
+    return n;
+}
 static BOOL same(const float *a, const float *b) {
     return a[0]==b[0] && a[1]==b[1] && a[2]==b[2];
 }
@@ -50,6 +81,8 @@ static BOOL should_hide(void *object, ULONGLONG now) {
 }
 static void scale_dispatch(int table_id,void *object,const float *scale) {
     if(enabled && same(scale,probe_signal)) return;
+    if(enabled && same(scale,head_signal)) { tag_head(object,GetTickCount64()); return; }
+    if(enabled && same(scale,camera_signal) && fpe_camera_ready()) return;
     if(enabled && same(scale,hide_signal) && renew(object,GetTickCount64())) {
         InterlockedIncrement(&registrations); InterlockedIncrement(&table_registrations[table_id]); return;
     }
@@ -66,6 +99,7 @@ static void render_hook(void *object,const void *a,const void *b,const void *c) 
 }
 static void *destroy_dispatch(int table_id,void *object,unsigned int flags) {
     forget(object);
+    untag_head(object);
     return original_destroy[table_id](object,flags);
 }
 #define TABLE_HOOKS(N) \
@@ -125,13 +159,36 @@ static void log_hex(HANDLE log,unsigned int value) {
 static void log_close(HANDLE log) {
     if(log!=INVALID_HANDLE_VALUE) CloseHandle(log);
 }
+/* 0.7.8.0 experiment: hook the camera update at its entry (MinHook) and start its worker. */
+static struct { HMODULE module; unsigned char *base, *update, *zoom; const char *failure; int status, eye_fix_ok; } camera_args;
+static DWORD WINAPI camera_thread(void *unused) {
+    (void)unused;
+    camera_worker_run(camera_args.module,camera_args.base,camera_args.update,camera_args.zoom,camera_args.failure,camera_args.status,camera_args.eye_fix_ok);
+    return 0;
+}
+static void camera_start(HMODULE module,unsigned char *base,unsigned char *update,unsigned char *zoom,const char *failure,int eye_fix_ok) {
+    int status=0;
+    if(update && zoom) {
+        MH_STATUS s=MH_Initialize();
+        if(s==MH_ERROR_ALREADY_INITIALIZED) s=MH_OK;
+        /* Zoom hook first: it only acts inside an update the update hook has marked. */
+        if(s==MH_OK) s=MH_CreateHook(zoom,(void*)camera_zoom_hook,(void**)&camera_zoom_original);
+        if(s==MH_OK) s=MH_CreateHook(update,(void*)camera_update_hook,(void**)&camera_update_original);
+        if(s==MH_OK) s=MH_EnableHook(zoom);
+        if(s==MH_OK) s=MH_EnableHook(update);
+        if(s!=MH_OK) { MH_DisableHook(update); MH_DisableHook(zoom); MH_RemoveHook(update); MH_RemoveHook(zoom); status=(int)s+1000; }
+    }
+    camera_args.module=module; camera_args.base=base; camera_args.update=update; camera_args.zoom=zoom; camera_args.failure=failure; camera_args.status=status; camera_args.eye_fix_ok=eye_fix_ok;
+    HANDLE thread=CreateThread(NULL,0,camera_thread,NULL,0,NULL);
+    if(thread) CloseHandle(thread);
+}
 static DWORD WINAPI initialize(void *module) {
     HANDLE log=open_log((HMODULE)module);
     unsigned char *base=(unsigned char*)GetModuleHandleW(NULL);
     FpeLocation where;
     ULONGLONG started=GetTickCount64();
     fpe_locate(base,&where);
-    log_text(log,"FPE Native 0.7.7.0; game build stamp "); log_number(log,where.stamp);
+    log_text(log,"FPE Native 3.0.0.0; game build stamp "); log_number(log,where.stamp);
     log_text(log,"; code search "); log_number(log,(unsigned int)(GetTickCount64()-started)); log_text(log," ms\n");
     if(where.failure) {
         log_text(log,"DISABLED: "); log_text(log,where.failure);
@@ -170,8 +227,9 @@ static DWORD WINAPI initialize(void *module) {
         log_text(log,"DISABLED: installation failed; own hooks rolled back\n"); log_close(log); return 0;
     }
     InterlockedExchange(&enabled,1);
-    log_text(log,"READY 0.7.7.0: render bridge; 500ms expiry; no C runtime. Instant scale reports separately in FirstPersonExplorerScaleDiagnostic.log.\n");
+    log_text(log,"READY 3.0.0.0: render bridge; 500ms expiry; no C runtime. Instant scale reports separately in FirstPersonExplorerScaleDiagnostic.log, camera in FirstPersonExplorerCamera.log.\n");
     log_close(log);
+    camera_start((HMODULE)module,base,where.camera_update,where.camera_zoom,where.camera_failure,where.eye_fix_ok);
     scale_diag_run((HMODULE)module,where.scale_hook,where.scale_failure);
     return 0;
 }

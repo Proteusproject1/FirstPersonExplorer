@@ -56,7 +56,8 @@ static void synthetic(void) {
     puts("PASS masking: relative call/RIP displacements ignored; opcode, stack offset, short branch, immediate, addressing form enforced");
 }
 static void expect_real(const FpeLocation *w) {
-    assert(!w->failure && !w->scale_failure);
+    assert(!w->failure && !w->scale_failure && !w->camera_failure);
+    assert(rva(w->camera_update)==0x1e0ddb0 && rva(w->camera_zoom)==0x1e1a230 && w->eye_fix_ok==1);
     assert(rva(w->scale_method)==0x3c60050 && rva(w->render_method)==0x3c5f050);
     assert(rva(w->scale_update)==0x2d9b260 && rva(w->scale_hook)==0x2d9b260+0x543);
     static const unsigned expected[4]={0x58b8ff8,0x58c2a88,0x58b9118,0x58b2d40};
@@ -96,6 +97,24 @@ int main(void) {
     assert(VirtualProtect(page,4096,PAGE_READWRITE,&old));
     fpe_locate(image,&w); expect_real(&w);
     puts("PASS no-access and guard pages are skipped without being touched");
+    /* 0.7.8.0: a changed camera prologue disables only the camera feature. */
+    unsigned char *cu=w.camera_update; b=cu[45]; cu[45]^=0x01; fpe_locate(image,&w);
+    assert(!w.failure && !w.scale_failure && w.camera_failure && !strcmp(w.camera_failure,"camera update not found") && !w.camera_update); cu[45]=b;
+    fpe_locate(image,&w); expect_real(&w);
+    puts("PASS camera update found at 0x1e0ddb0; a changed camera prologue disables only the camera feature");
+    /* 0.7.9.0: the zoom step is required too. */
+    unsigned char *cz=w.camera_zoom; b=cz[40]; cz[40]^=0x01; fpe_locate(image,&w);
+    assert(!w.failure && w.camera_failure && !strcmp(w.camera_failure,"camera zoom step not found") && !w.camera_update && !w.camera_zoom); cz[40]=b;
+    fpe_locate(image,&w); expect_real(&w);
+    puts("PASS camera zoom step found at 0x1e1a230; a changed zoom prologue disables only the camera feature");
+    /* 0.8.0.0: the eye fix needs the eye-distance code (update+0xB23); changed or doubled = eye fix off only. */
+    unsigned char *ed=w.camera_update+0xb23;
+    assert(ed[0]==0x89 && ed[2]==0x5c && ed[6]==0xf3 && ed[10]==0x5c);
+    b=ed[2]; ed[2]=0x60; fpe_locate(image,&w); assert(!w.failure && !w.camera_failure && w.camera_update && w.eye_fix_ok==0); ed[2]=b;
+    unsigned char spare[14]; unsigned char *dup=w.camera_update+0x1300; memcpy(spare,dup,14); memcpy(dup,ed,14);
+    fpe_locate(image,&w); assert(!w.camera_failure && w.eye_fix_ok==0); memcpy(dup,spare,14);
+    fpe_locate(image,&w); expect_real(&w);
+    puts("PASS eye-distance code found once at update+0xb23; changed or duplicated disables only the eye fix");
     puts("PASS refusals: changed render/scale code, duplicate match, missing table, changed table layout, changed hook instructions, changed frame offset; restored image accepted again");
     return 0;
 }

@@ -1,0 +1,253 @@
+{
+  "SchemaVersion": 1,
+  "Tabs": [
+    {
+      "TabId": "fpe_general",
+      "TabName": "General",
+      "Sections": [
+        {
+          "SectionId": "fpe_first_person",
+          "SectionName": "First person",
+          "Settings": [
+            {
+              "Id": "view",
+              "Name": "View",
+              "Type": "radio",
+              "Default": "Full body",
+              "Options": {
+                "Choices": [
+                  "Full body",
+                  "Hidden body",
+                  "Shrunken body"
+                ]
+              },
+              "Description": "Full body: see your arms, weapons and armour; only your head is hidden. Hidden body: the classic first-person view, with your body hidden. Shrunken body: your body is shrunk out of sight, for smaller spell effects and a tiny move/jump preview (a held torch gives only a small light).",
+              "Tooltip": "Changes apply right away, even in first person."
+            },
+            {
+              "Id": "first_person_combat",
+              "Name": "First-person combat",
+              "Type": "checkbox",
+              "Default": true,
+              "Description": "Stay in first person when combat starts. Off: combat uses the normal tactical camera."
+            },
+            {
+              "Id": "fb_combat_body",
+              "Name": "In combat",
+              "Type": "radio",
+              "Default": "Hands and weapons",
+              "Options": {
+                "Choices": [
+                  "Hands and weapons",
+                  "Weapons only",
+                  "Full body",
+                  "Nothing"
+                ]
+              },
+              "Description": "What you see of yourself during combat; the camera stays in your head. Hands and weapons: what you hold, plus gloves, gauntlets and bracers (bare arms belong to the body in BG3, so they stay hidden). Weapons only: just what you hold. Full body: the same view as exploring. Nothing: no body and no weapons.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "view",
+                    "Operator": "==",
+                    "ExpectedValue": "Full body"
+                  },
+                  {
+                    "SettingId": "first_person_combat",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "Id": "render_held_items",
+              "Name": "Show held items",
+              "Type": "checkbox",
+              "Default": true,
+              "Description": "Show drawn weapons, shields and a held torch while your body is hidden.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "view",
+                    "Operator": "==",
+                    "ExpectedValue": "Hidden body"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "SectionId": "fpe_reset",
+          "SectionName": "Reset",
+          "Settings": [
+            {
+              "Id": "reset_recommended",
+              "Name": "Recommended settings",
+              "Type": "event_button",
+              "Options": {
+                "Label": "Reset to recommended settings"
+              },
+              "Description": "Puts every True First-Person Camera setting back to the recommended values: Full body, first-person combat on, hands and weapons in combat, and the default camera."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "TabId": "fpe_full_body",
+      "TabName": "Full body camera",
+      "VisibleIf": {
+        "Conditions": [
+          {
+            "SettingId": "view",
+            "Operator": "==",
+            "ExpectedValue": "Full body"
+          }
+        ]
+      },
+      "Sections": [
+        {
+          "SectionId": "fpe_full_body_camera",
+          "SectionName": "Camera",
+          "Settings": [
+            {
+              "Id": "fb_facing",
+              "Name": "Hide body when facing the camera",
+              "Type": "checkbox",
+              "Default": true,
+              "Description": "Hides your body while it faces away from where you are looking (for example when you walk toward the camera), so you never look down at your own neck. It comes back as soon as you face forward."
+            },
+            {
+              "Id": "fb_tune",
+              "Name": "Fine-tune camera",
+              "Type": "checkbox",
+              "Default": false,
+              "Description": "Shows the camera sliders below. Off: the recommended camera. Your slider values are kept for when you turn it back on."
+            },
+            {
+              "Id": "fb_eye_height_cm",
+              "Name": "Eye height (cm)",
+              "Type": "slider_int",
+              "Default": 10,
+              "Options": {
+                "Min": -30,
+                "Max": 30
+              },
+              "Description": "Raises or lowers your eye.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "fb_tune",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "Id": "fb_eye_forward_cm",
+              "Name": "Eye forward (cm)",
+              "Type": "slider_int",
+              "Default": 5,
+              "Options": {
+                "Min": -10,
+                "Max": 30
+              },
+              "Description": "Moves your eye forward or back when you look straight ahead.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "fb_tune",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "Id": "fb_neck_cm",
+              "Name": "Look-down tilt (cm)",
+              "Type": "slider_int",
+              "Default": 13,
+              "Options": {
+                "Min": 0,
+                "Max": 25
+              },
+              "Description": "How far your eye moves forward and down when you look down, like a real neck. 0: no tilt.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "fb_tune",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            },
+            {
+              "Id": "fb_bob_pct",
+              "Name": "Head bob (%)",
+              "Type": "slider_int",
+              "Default": 25,
+              "Options": {
+                "Min": 0,
+                "Max": 100
+              },
+              "Description": "How much of your head's up-and-down walking motion the camera follows. 100: all of it. 0: perfectly steady.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "fb_tune",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "SectionId": "fpe_full_body_diag",
+          "SectionName": "Troubleshooting",
+          "Settings": [
+            {
+              "Id": "fb_logs",
+              "Name": "Diagnostic logs",
+              "Type": "checkbox",
+              "Default": false,
+              "Description": "Writes detailed camera logs to help with a bug report. Leave off for normal play."
+            },
+            {
+              "Id": "fb_mark",
+              "Name": "Mark moment",
+              "Type": "keybinding_v2",
+              "Default": {
+                "Keyboard": {
+                  "Key": "K",
+                  "ModifierKeys": [
+                    "LCtrl"
+                  ]
+                }
+              },
+              "Options": {
+                "BlockIfLevelNotStarted": true
+              },
+              "Description": "Press when something looks wrong: marks the moment in the diagnostic logs.",
+              "VisibleIf": {
+                "Conditions": [
+                  {
+                    "SettingId": "fb_logs",
+                    "Operator": "==",
+                    "ExpectedValue": true
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
